@@ -1,0 +1,27 @@
+package com.aquinozz.herald.webhookdispatcher.listener;
+
+import com.aquinozz.herald.common.constants.KafkaTopics;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.kafka.annotation.KafkaListener;
+import org.springframework.stereotype.Component;
+
+import java.util.concurrent.atomic.AtomicInteger;
+
+@Component
+public class EventIngressListener {
+
+    private static final Logger log = LoggerFactory.getLogger(EventIngressListener.class);
+
+    private final AtomicInteger received = new AtomicInteger();
+
+    @KafkaListener(topics = KafkaTopics.EVENTS_INGRESS, groupId = "webhook-dispatcher")
+    public void onEvent(String message) {
+        log.info("[EventIngressListener] Evento recebido: {}", message);
+        received.incrementAndGet();
+    }
+
+    public int countReceived() {
+        return received.get();
+    }
+}
