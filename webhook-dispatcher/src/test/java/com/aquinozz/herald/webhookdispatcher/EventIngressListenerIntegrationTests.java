@@ -9,22 +9,30 @@ import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.KafkaContainer;
+import org.testcontainers.containers.MongoDBContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@SpringBootTest
+@SpringBootTest(properties = {
+        "spring.kafka.consumer.auto-offset-reset=earliest",
+        "herald.endpoint-service.url=http://localhost:1"
+})
 @Testcontainers(disabledWithoutDocker = true)
 class EventIngressListenerIntegrationTests {
 
     @Container
     static final KafkaContainer KAFKA = new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.5.0"));
 
+    @Container
+    static final MongoDBContainer MONGO = new MongoDBContainer("mongo:7");
+
     @DynamicPropertySource
     static void props(DynamicPropertyRegistry registry) {
         registry.add("spring.kafka.bootstrap-servers", KAFKA::getBootstrapServers);
+        registry.add("spring.data.mongodb.uri", () -> MONGO.getConnectionString() + "/herald");
         registry.add("spring.kafka.consumer.auto-offset-reset", () -> "earliest");
     }
 
