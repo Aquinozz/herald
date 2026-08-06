@@ -1,7 +1,7 @@
 package com.aquinozz.herald.webhookdispatcher.listener;
 
 import com.aquinozz.herald.common.constants.KafkaTopics;
-import com.aquinozz.herald.webhookdispatcher.service.DeliveryService;
+import com.aquinozz.herald.webhookdispatcher.service.DeliveryPlannerService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.kafka.annotation.KafkaListener;
@@ -15,10 +15,10 @@ public class EventIngressListener {
     private static final Logger log = LoggerFactory.getLogger(EventIngressListener.class);
 
     private final AtomicInteger received = new AtomicInteger();
-    private final DeliveryService deliveryService;
+    private final DeliveryPlannerService deliveryPlannerService;
 
-    public EventIngressListener(DeliveryService deliveryService) {
-        this.deliveryService = deliveryService;
+    public EventIngressListener(DeliveryPlannerService deliveryPlannerService) {
+        this.deliveryPlannerService = deliveryPlannerService;
     }
 
     @KafkaListener(topics = KafkaTopics.EVENTS_INGRESS, groupId = "webhook-dispatcher")
@@ -26,9 +26,9 @@ public class EventIngressListener {
         received.incrementAndGet();
         log.info("[EventIngressListener] Evento recebido: {}", message);
         try {
-            deliveryService.deliver(message);
+            deliveryPlannerService.plan(message);
         } catch (Exception e) {
-            log.error("Erro ao processar evento: {}", e.getMessage(), e);
+            log.error("Erro ao planejar evento: {}", e.getMessage(), e);
         }
     }
 

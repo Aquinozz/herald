@@ -100,7 +100,7 @@ class DeliveryServiceIntegrationTests {
     void entregaComErro500GravaFailed() throws Exception {
         DESTINATION.setDispatcher(responder(500));
 
-        kafkaTemplate.send(KafkaTopics.EVENTS_INGRESS, "1", envelope("evt-500", 2)).get();
+        kafkaTemplate.send(KafkaTopics.EVENTS_INGRESS, "1", envelope("evt-500", 1)).get();
 
         DeliveryAttempt attempt = aguardarAttempt();
         assertThat(attempt).isNotNull();
@@ -113,7 +113,7 @@ class DeliveryServiceIntegrationTests {
     void entregaParaDestinoInacessivelGravaFailed() throws Exception {
         configurarEndpointService("http://localhost:1/hook");
 
-        kafkaTemplate.send(KafkaTopics.EVENTS_INGRESS, "1", envelope("evt-conn", 3)).get();
+        kafkaTemplate.send(KafkaTopics.EVENTS_INGRESS, "1", envelope("evt-conn", 1)).get();
 
         DeliveryAttempt attempt = aguardarAttempt();
         assertThat(attempt).isNotNull();
