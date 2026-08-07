@@ -39,6 +39,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Repositório em lowercase
+        id: repo
+        run: echo "value=${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -56,5 +60,5 @@ jobs:
           push: true
           build-args: SERVICE=${{ matrix.service }}
           tags: |
-            ghcr.io/${{ github.repository }}/${{ matrix.service }}:latest
-            ghcr.io/${{ github.repository }}/${{ matrix.service }}:${{ github.sha }}
+            ghcr.io/${{ steps.repo.outputs.value }}/${{ matrix.service }}:latest
+            ghcr.io/${{ steps.repo.outputs.value }}/${{ matrix.service }}:${{ github.sha }}
