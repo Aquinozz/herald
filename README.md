@@ -33,32 +33,45 @@ O cliente recebe **202 Accepted** na hora — a entrega é **assíncrona** e des
 docker compose up -d
 ```
 
-Sobe: **MySQL 8** (3306), **MongoDB 7** (27017), **Kafka + Zookeeper** (9093), **Prometheus** (9090) e **Grafana** (3000, login `admin`/`admin`).
+Sobe: **MySQL 8** (3306), **MongoDB 7** (27017), **Redis 7** (6379), **Kafka + Zookeeper** (9093), **Prometheus** (9090) e **Grafana** (3000, login `admin`/`admin`).
 
 > O Kafka usa a porta **9093** para não conflitar com outros brokers locais na 9092. Prometheus e Grafana rodam com `network_mode: host` (contam a rede do host) para fazer scrape em `localhost:8081/8082` sem depender de firewall do docker.
 
 ### 2. Suba os serviços
 
 ```bash
-./mvnw -pl endpoint-service spring-boot:run      # :8081
-./mvnw -pl webhook-dispatcher spring-boot:run    # :8082
-./mvnw -pl retry-consumer spring-boot:run        # :8083
+./mvnw -pl gateway spring-boot:run            # :8080 (roteamento + rate limit)
+./mvnw -pl endpoint-service spring-boot:run    # :8081
+./mvnw -pl webhook-dispatcher spring-boot:run  # :8082
+./mvnw -pl retry-consumer spring-boot:run      # :8083
 ```
+
+> A partir de agora as chamadas entram pelo **gateway** (`localhost:8080/api/v1/**`), que faz **rate limiting por app** usando o header `X-App-Key`.
 
 ### 3. Teste
 
 ```bash
 # cria app (gera apiKey + secretHmac)
-curl -X POST localhost:8081/api/v1/apps \
+curl -X POST localhost:8080/api/v1/apps \
   -H "Content-Type: application/json" -d '{"nome":"Minha Loja"}'
 
 # cadastra o endpoint que vai receber os webhooks
-curl -X POST localhost:8081/api/v1/apps/1/endpoints \
+curl -X POST localhost:8080/api/v1/apps/1/endpoints \
   -H "Content-Type: application/json" -d '{"url":"https://meu-site.com/webhook"}'
 
 # publica um evento (retorna 202 e entrega de forma confiável)
-curl -X POST localhost:8081/api/v1/apps/1/events \
+curl -X POST localhost:8080/api/v1/apps/1/events \
   -H "Content-Type: application/json" -d '{"type":"payment.confirmed","data":{"order":42}}'
+```
+
+Para exercitar o **rate limiting** (cota configurável em `herald.rate-limit.*`):
+
+```bash
+# estoura a cota do app e recebe 429 + Retry-After
+for i in $(seq 1 50); do
+  curl -s -o /dev/null -w "%{http_code} " localhost:8080/api/v1/apps \
+    -H "X-App-Key: <apiKey do app>"
+done; echo
 ```
 
 ---
@@ -73,7 +86,7 @@ Mono-repo Maven com multi-módulo:
 | `endpoint-service` | 8081 | CRUD de apps/endpoints (MySQL) + validação + **ingestão** de eventos | ✅ |
 | `webhook-dispatcher` | 8082 | Entrada: publica eventos no `ingress`. Worker: entrega HTTP com assinatura HMAC | ✅ |
 | `retry-consumer` | 8083 | Backoff exponencial e registro na Dead Letter Queue | ✅ |
-| `gateway` | 8080 | Roteamento e rate limiting | 🔜 |
+| `gateway` | 8080 | Roteamento `/api/v1/**` → serviços e **rate limiting por app** (Redis) | ✅ |
 
 ### Tópicos Kafka
 | Tópico | Papel |
@@ -88,12 +101,13 @@ Mono-repo Maven com multi-módulo:
 |-------|-------------|
 | **MySQL** | Dados de negócio: apps, endpoints, chaves |
 | **MongoDB** | Auditoria: logs de cada tentativa (`DeliveryAttempt`) e eventos na DLQ (`DeadLetter`) |
+| **Redis** | Contadores do **token bucket** do rate limiting (1 bucket por app) |
 
 ---
 
 ## 📈 Observabilidade
 
-Métricas extras expostas por **Micrometer** no endpoint `/actuator/prometheus` do `webhook-dispatcher` e coletadas pelo Prometheus:
+Métricas extras expostas por **Micrometer** nos endpoints `/actuator/prometheus` do `endpoint-service`, `webhook-dispatcher` e `gateway`, e coletadas pelo Prometheus. As métricas de processo de entrega:
 
 | Métrica | Tipo | O que mede |
 |---------|------|-----------|
@@ -119,6 +133,7 @@ A dashboard inclui: volume de entregas por app, latência P50/P95/P99, taxa de s
 - **Autenticidade** — assinatura `HMAC-SHA256` via `X-Webhook-Signature`
 - **Dead Letter Queue** — eventos irremediavelmente falhos ficam registrados com o motivo
 - **Timeout** — cada entrega tem limite de 5s
+- **Rate limiting por app** — token bucket no Redis via gateway (header `X-App-Key`), resposta **429** com `Retry-After`
 
 ---
 
