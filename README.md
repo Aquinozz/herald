@@ -144,10 +144,32 @@ A dashboard inclui: volume de entregas por app, latência P50/P95/P99, taxa de s
 | Módulo | Cobertura |
 |--------|-----------|
 | endpoint-service | CRUD + ingestão/validação + evento chega no tópico |
-| webhook-dispatcher | entrega 200/500/indisponível, roteamento p/ retry/DLQ, dedup |
+| webhook-dispatcher | entrega 200/500/indisponível, roteamento p/ retry/DLQ, dedup, métricas |
 | retry-consumer | reenvio após delay, persistência de DeadLetter |
+| gateway | roteamento `/api/v1/**`, **429** + `Retry-After`, cotas por app (Redis) |
 
 > Requer **Docker** rodando (Testcontainers).
+
+---
+
+## 🐳 Docker e CI/CD
+
+### Imagens
+
+O `Dockerfile` multi-stage compila todo o reactor no Maven e empacota o jar de um serviço específico (via `--build-arg SERVICE`):
+
+```bash
+docker build --build-arg SERVICE=gateway -t herald/gateway .
+```
+
+Os serviços expõem as mesmas portas locais (8080–8083) e leem as configurações de infraestrutura por variáveis de ambiente (ex.: `SPRING_DATA_REDIS_HOST`).
+
+### Pipeline (GitHub Actions)
+
+`.github/workflows/ci.yml` roda em **push/PR** e em **push na `main`**:
+
+1. `build-test` — `./mvnw clean verify` (suíte Testcontainers);
+2. `docker-build` — build e push das imagens dos 4 serviços para **ghcr.io** (`ghcr.io/<repo>/<service>:latest` e tag `:<sha>`).
 
 ---
 
@@ -159,6 +181,6 @@ A dashboard inclui: volume de entregas por app, latência P50/P95/P99, taxa de s
 
 ---
 
-**Stack:** Java 21 · Spring Boot 3.5 · Apache Kafka · MySQL · MongoDB · Docker Compose · Testcontainers
+**Stack:** Java 21 · Spring Boot 3.5 · Apache Kafka · MySQL · MongoDB · Redis · Prometheus/Grafana · Docker · GitHub Actions · Testcontainers
 
 Feito por [Aquinozz](https://github.com/Aquinozz) — v0.2.0
