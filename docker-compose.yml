@@ -26,6 +26,11 @@ services:
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
+      ZOOKEEPER_DATA_DIR: /var/lib/zookeeper/data
+      ZOOKEEPER_DATA_LOG_DIR: /var/lib/zookeeper/log
+    volumes:
+      - zookeeper-data:/var/lib/zookeeper/data
+      - zookeeper-log:/var/lib/zookeeper/log
 
   kafka:
     image: confluentinc/cp-kafka:7.5.0
@@ -44,6 +49,27 @@ services:
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_DEFAULT_REPLICATION_FACTOR: 1
 
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    container_name: herald-prometheus
+    network_mode: host
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    container_name: herald-grafana
+    network_mode: host
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - ./grafana/datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+      - ./grafana/dashboards-provider.yml:/etc/grafana/provisioning/dashboards/dashboards-provider.yml:ro
+      - ./grafana/herald-dashboard.json:/var/lib/grafana/dashboards/herald-dashboard.json:ro
+
 volumes:
   mysql-data:
   mongo-data:
+  zookeeper-data:
+  zookeeper-log:

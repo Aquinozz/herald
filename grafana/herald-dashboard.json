@@ -1,0 +1,93 @@
+{
+  "uid": "herald",
+  "title": "Herald - Observabilidade",
+  "tags": ["herald"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "10s",
+  "time": { "from": "now-30m", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Volume de entregas por status",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(herald_delivery_total[1m])) by (status, appId)",
+          "legendFormat": "{{appId}} - {{status}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "fillOpacity": 20, "stacking": { "mode": "normal" } } }
+      }
+    },
+    {
+      "id": 2,
+      "title": "Latência de entrega HTTP (P50/P95/P99)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(herald_delivery_duration_seconds_bucket[1m])) by (le))",
+          "legendFormat": "P50",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(herald_delivery_duration_seconds_bucket[1m])))",
+          "legendFormat": "P95",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(herald_delivery_duration_seconds_bucket[1m])))",
+          "legendFormat": "P99",
+          "refId": "C"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "id": 3,
+      "title": "Eventos na DLQ",
+      "type": "stat",
+      "gridPos": { "h": 7, "w": 6, "x": 0, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [
+        { "expr": "increase(herald_dlq_total[5m])", "legendFormat": "DLQ (5m)", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "none" } }
+    },
+    {
+      "id": 4,
+      "title": "Retentativas agendadas",
+      "type": "stat",
+      "gridPos": { "h": 7, "w": 6, "x": 6, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [
+        { "expr": "increase(herald_retry_scheduled_total[5m])", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "none" } }
+    },
+    {
+      "id": 5,
+      "title": "Taxa de sucesso",
+      "type": "gauge",
+      "gridPos": { "h": 7, "w": 6, "x": 12, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(herald_delivery_total{status=\"success\"}[1m])) / clamp_min((sum(rate(herald_delivery_total[1m]))), 1e-9)",
+          "legendFormat": "Sucesso",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "percentunit", "max": 1, "min": 0, "color": { "mode": "thresholds" }, "thresholds": { "steps": [ { "color": "red", "value": null }, { "color": "orange", "value": 0.8 }, { "color": "green", "value": 0.95 } ] } }
+      }
+    }
+  ]
+}

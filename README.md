@@ -33,9 +33,9 @@ O cliente recebe **202 Accepted** na hora — a entrega é **assíncrona** e des
 docker compose up -d
 ```
 
-Sobe: **MySQL 8** (3306), **MongoDB 7** (27017), **Kafka + Zookeeper** (9093) e **Prometheus/Grafana**.
+Sobe: **MySQL 8** (3306), **MongoDB 7** (27017), **Kafka + Zookeeper** (9093), **Prometheus** (9090) e **Grafana** (3000, login `admin`/`admin`).
 
-> O Kafka usa a porta **9093** para não conflitar com outros brokers locais na 9092.
+> O Kafka usa a porta **9093** para não conflitar com outros brokers locais na 9092. Prometheus e Grafana rodam com `network_mode: host` (contam a rede do host) para fazer scrape em `localhost:8081/8082` sem depender de firewall do docker.
 
 ### 2. Suba os serviços
 
@@ -88,6 +88,26 @@ Mono-repo Maven com multi-módulo:
 |-------|-------------|
 | **MySQL** | Dados de negócio: apps, endpoints, chaves |
 | **MongoDB** | Auditoria: logs de cada tentativa (`DeliveryAttempt`) e eventos na DLQ (`DeadLetter`) |
+
+---
+
+## 📈 Observabilidade
+
+Métricas extras expostas por **Micrometer** no endpoint `/actuator/prometheus` do `webhook-dispatcher` e coletadas pelo Prometheus:
+
+| Métrica | Tipo | O que mede |
+|---------|------|-----------|
+| `herald_delivery_total{status,appId}` | contador | Entregas HTTP, por status e app |
+| `herald_delivery_duration_seconds` | histograma | Latência das entregas (P50/P95/P99) |
+| `herald_retry_scheduled_total` | contador | Retentativas agendadas |
+| `herald_dlq_total` | contador | Eventos enviados à Dead Letter Queue |
+
+### Acessando
+
+- **Grafana** → http://localhost:3000 — dashboard **"Herald - Observabilidade"** já provisionada a partir de `./grafana/`. Login: `admin` / `admin`.
+- **Prometheus** → http://localhost:9090
+
+A dashboard inclui: volume de entregas por app, latência P50/P95/P99, taxa de sucesso, retentativas e eventos na DLQ. O dashboard e o datasource são provisionados por arquivos (`grafana/datasources.yml`, `grafana/dashboards-provider.yml`, `grafana/herald-dashboard.json`), então sobrevivem a `docker compose down`.
 
 ---
 

@@ -65,6 +65,9 @@ class DeliveryServiceIntegrationTests {
     @Autowired
     private DeliveryAttemptRepository repository;
 
+    @Autowired
+    private io.micrometer.core.instrument.MeterRegistry meterRegistry;
+
     @AfterAll
     static void afterAll() throws IOException {
         ENDPOINT_SERVICE.shutdown();
@@ -94,6 +97,11 @@ class DeliveryServiceIntegrationTests {
         assertThat(recebido.getHeader("X-Webhook-Signature")).isEqualTo(attempt.getSignature());
         assertThat(recebido.getHeader("Idempotency-Key")).isEqualTo("evt-suc");
         assertThat(recebido.getBody().readUtf8()).isEqualTo(envelope);
+
+        var contador = meterRegistry.find("herald.delivery.total")
+                .tag("status", "success").counter();
+        assertThat(contador).isNotNull();
+        assertThat(contador.count()).isGreaterThan(0);
     }
 
     @Test

@@ -8,6 +8,9 @@ import com.aquinozz.herald.webhookdispatcher.dtos.AppInfo;
 import com.aquinozz.herald.webhookdispatcher.model.DeliveryAttempt;
 import com.aquinozz.herald.webhookdispatcher.repository.DeliveryAttemptRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -35,6 +38,10 @@ public class DeliveryWorker {
     private final ObjectMapper objectMapper;
     private final DeliveryAttemptRepository deliveryAttemptRepository;
     private final EndpointServiceClient endpointServiceClient;
+    private final MeterRegistry meterRegistry;
+    private final Counter retryScheduled;
+    private final Counter dlqTotal;
+    private final Timer deliveryTimer;
 
     @Value("${herald.retry.backoff-base-ms:10000}")
     private long backoffBaseMs;
@@ -43,12 +50,20 @@ public class DeliveryWorker {
                           WebClient webClient,
                           ObjectMapper objectMapper,
                           DeliveryAttemptRepository deliveryAttemptRepository,
-                          EndpointServiceClient endpointServiceClient) {
+                          EndpointServiceClient endpointServiceClient,
+                          MeterRegistry meterRegistry) {
         this.kafkaTemplate = kafkaTemplate;
         this.webClient = webClient;
         this.objectMapper = objectMapper;
         this.deliveryAttemptRepository = deliveryAttemptRepository;
         this.endpointServiceClient = endpointServiceClient;
+        this.meterRegistry = meterRegistry;
+        this.retryScheduled = meterRegistry.counter("herald.retry.scheduled.total");
+        this.dlqTotal = meterRegistry.counter("herald.dlq.total");
+        this.deliveryTimer = Timer.builder("herald.delivery.duration")
+                .description("Tempo de cada entrega HTTP")
+                .publishPercentiles(0.5, 0.95, 0.99)
+                .register(meterRegistry);
     }
 
     @KafkaListener(topics = KafkaTopics.EVENTS_DELIVERY, groupId = "webhook-dispatcher-delivery")
@@ -115,6 +130,12 @@ public class DeliveryWorker {
         }
         attempt.setLatencyMs(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - inicio));
 
+        deliveryTimer.record(Duration.ofMillis(attempt.getLatencyMs()));
+        meterRegistry.counter("herald.delivery.total",
+                        "status", attempt.getStatus() == DeliveryAttempt.Status.SUCCESS ? "success" : "failed",
+                        "appId", String.valueOf(dm.appId()))
+                .increment();
+
         try {
             deliveryAttemptRepository.save(attempt);
         } catch (Exception e) {
@@ -142,6 +163,7 @@ public class DeliveryWorker {
         try {
             kafkaTemplate.send(KafkaTopics.EVENTS_RETRY, String.valueOf(dm.appId()),
                     objectMapper.writeValueAsString(retry));
+            retryScheduled.increment();
             log.info("Agendada retentativa {} do evento {} p/ {} em {}ms",
                     nextAttempt, dm.eventId(), dm.endpointUrl(), delayMs);
         } catch (Exception e) {
@@ -156,6 +178,7 @@ public class DeliveryWorker {
         try {
             kafkaTemplate.send(KafkaTopics.EVENTS_DLQ, String.valueOf(dm.appId()),
                     objectMapper.writeValueAsString(dlq));
+            dlqTotal.increment();
             log.warn("Evento {} enviado para DLQ ({})", dm.eventId(), motivo);
         } catch (Exception e) {
             log.error("Erro ao publicar DLQ: {}", e.getMessage());
