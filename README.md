@@ -1,186 +1,186 @@
 # Herald 🦍🍌
 
-**Webhook Delivery Engine** — recebe eventos de apps e os entrega de forma **confiável** nos endpoints dos clientes, mesmo quando o destino está fora do ar ou lento.
+**Webhook Delivery Engine** — receives events from apps and delivers them **reliably** to clients' endpoints, even when the destination is offline or slow.
 
-Projeto de portfólio em microservices que replica a arquitetura de entrega de webhooks usada por empresas como Stripe, GitHub e Twilio: desacoplamento via Kafka, retry com backoff exponencial, idempotência e Dead Letter Queue.
+A portfolio project in microservices that replicates the webhook delivery architecture used by companies like Stripe, GitHub and Twilio: decoupling via Kafka, retry with exponential backoff, idempotency and a Dead Letter Queue.
 
 ---
 
-## ✨ Fluxo
+## ✨ Flow
 
 ```mermaid
 flowchart LR
-    A[Cliente] -->|POST /api/v1/apps/:id/events| B[endpoint-service]
-    B -->|publica em `ingress`| C[(Kafka)]
+    A[Client] -->|POST /api/v1/apps/:id/events| B[endpoint-service]
+    B -->|publishes to `ingress`| C[(Kafka)]
     C --> D[Planner]
-    D -->|1 msg por endpoint em `delivery`| C
+    D -->|1 msg per endpoint in `delivery`| C
     C --> E[Delivery Worker]
-    E -->|POST com HMAC| F[Endpoint do cliente]
-    E -->|falha: retry 2ⁿ·delay em `retry`| C
-    C -->|delay passa| E
-    E -->|exauriu tentativas em `dlq`| G[DeadLetter no MongoDB]
+    E -->|POST with HMAC| F[Client endpoint]
+    E -->|failure: retry 2ⁿ·delay in `retry`| C
+    C -->|delay passes| E
+    E -->|exhausted attempts in `dlq`| G[DeadLetter in MongoDB]
 ```
 
-O cliente recebe **202 Accepted** na hora — a entrega é **assíncrona** e desacoplada por fila.
+The client receives **202 Accepted** right away — delivery is **asynchronous** and decoupled by queue.
 
 ---
 
-## 🚀 Como usar
+## 🚀 How to use
 
-### 1. Suba a infraestrutura
+### 1. Start the infrastructure
 
 ```bash
 docker compose up -d
 ```
 
-Sobe: **MySQL 8** (3306), **MongoDB 7** (27017), **Redis 7** (6379), **Kafka + Zookeeper** (9093), **Prometheus** (9090) e **Grafana** (3000, login `admin`/`admin`).
+Starts: **MySQL 8** (3306), **MongoDB 7** (27017), **Redis 7** (6379), **Kafka + Zookeeper** (9093), **Prometheus** (9090) and **Grafana** (3000, login `admin`/`admin`).
 
-> O Kafka usa a porta **9093** para não conflitar com outros brokers locais na 9092. Prometheus e Grafana rodam com `network_mode: host` (contam a rede do host) para fazer scrape em `localhost:8081/8082` sem depender de firewall do docker.
+> Kafka uses port **9093** to avoid conflicts with other local brokers on 9092. Prometheus and Grafana run with `network_mode: host` (they use the host network) to scrape `localhost:8081/8082` without relying on the docker firewall.
 
-### 2. Suba os serviços
+### 2. Start the services
 
 ```bash
-./mvnw -pl gateway spring-boot:run            # :8080 (roteamento + rate limit)
+./mvnw -pl gateway spring-boot:run            # :8080 (routing + rate limit)
 ./mvnw -pl endpoint-service spring-boot:run    # :8081
 ./mvnw -pl webhook-dispatcher spring-boot:run  # :8082
 ./mvnw -pl retry-consumer spring-boot:run      # :8083
 ```
 
-> A partir de agora as chamadas entram pelo **gateway** (`localhost:8080/api/v1/**`), que faz **rate limiting por app** usando o header `X-App-Key`.
+> From now on requests go through the **gateway** (`localhost:8080/api/v1/**`), which does **per-app rate limiting** using the `X-App-Key` header.
 
-### 3. Teste
+### 3. Test
 
 ```bash
-# cria app (gera apiKey + secretHmac)
+# create app (generates apiKey + secretHmac)
 curl -X POST localhost:8080/api/v1/apps \
   -H "Content-Type: application/json" -d '{"nome":"Minha Loja"}'
 
-# cadastra o endpoint que vai receber os webhooks
+# register the endpoint that will receive the webhooks
 curl -X POST localhost:8080/api/v1/apps/1/endpoints \
   -H "Content-Type: application/json" -d '{"url":"https://meu-site.com/webhook"}'
 
-# publica um evento (retorna 202 e entrega de forma confiável)
+# publish an event (returns 202 and delivers it reliably)
 curl -X POST localhost:8080/api/v1/apps/1/events \
   -H "Content-Type: application/json" -d '{"type":"payment.confirmed","data":{"order":42}}'
 ```
 
-Para exercitar o **rate limiting** (cota configurável em `herald.rate-limit.*`):
+To exercise the **rate limiting** (configurable quota in `herald.rate-limit.*`):
 
 ```bash
-# estoura a cota do app e recebe 429 + Retry-After
+# exceeds the app's quota and gets 429 + Retry-After
 for i in $(seq 1 50); do
   curl -s -o /dev/null -w "%{http_code} " localhost:8080/api/v1/apps \
-    -H "X-App-Key: <apiKey do app>"
+    -H "X-App-Key: <app apiKey>"
 done; echo
 ```
 
 ---
 
-## 🧱 Arquitetura
+## 🧱 Architecture
 
-Mono-repo Maven com multi-módulo:
+Maven multi-module mono-repo:
 
-| Módulo | Porta | Papel | Status |
+| Module | Port | Role | Status |
 |--------|-------|-------|--------|
-| `common` | — | DTOs e utilitários compartilhados (`HmacSigner`, `KafkaTopics`, `DeliveryMessage`) | ✅ |
-| `endpoint-service` | 8081 | CRUD de apps/endpoints (MySQL) + validação + **ingestão** de eventos | ✅ |
-| `webhook-dispatcher` | 8082 | Entrada: publica eventos no `ingress`. Worker: entrega HTTP com assinatura HMAC | ✅ |
-| `retry-consumer` | 8083 | Backoff exponencial e registro na Dead Letter Queue | ✅ |
-| `gateway` | 8080 | Roteamento `/api/v1/**` → serviços e **rate limiting por app** (Redis) | ✅ |
+| `common` | — | Shared DTOs and utilities (`HmacSigner`, `KafkaTopics`, `DeliveryMessage`) | ✅ |
+| `endpoint-service` | 8081 | CRUD of apps/endpoints (MySQL) + validation + **event ingestion** | ✅ |
+| `webhook-dispatcher` | 8082 | Input: publishes events to `ingress`. Worker: HTTP delivery with HMAC signature | ✅ |
+| `retry-consumer` | 8083 | Exponential backoff and Dead Letter Queue registration | ✅ |
+| `gateway` | 8080 | Routing `/api/v1/**` → services and **per-app rate limiting** (Redis) | ✅ |
 
-### Tópicos Kafka
-| Tópico | Papel |
+### Kafka topics
+| Topic | Role |
 |--------|-------|
-| `webhook.events.ingress` | Eventos recebidos (chave = `appId`) |
-| `webhook.events.delivery` | Entregas individuais (1 evento → 1 endpoint) |
-| `webhook.events.retry` | Retentativa agendada com delay |
-| `webhook.events.dlq` | Eventos que exauriram as tentativas |
+| `webhook.events.ingress` | Received events (key = `appId`) |
+| `webhook.events.delivery` | Individual deliveries (1 event → 1 endpoint) |
+| `webhook.events.retry` | Scheduled retry with delay |
+| `webhook.events.dlq` | Events that exhausted the attempts |
 
-### Bando de dados
-| Banco | O que guarda |
+### Databases
+| Database | What it stores |
 |-------|-------------|
-| **MySQL** | Dados de negócio: apps, endpoints, chaves |
-| **MongoDB** | Auditoria: logs de cada tentativa (`DeliveryAttempt`) e eventos na DLQ (`DeadLetter`) |
-| **Redis** | Contadores do **token bucket** do rate limiting (1 bucket por app) |
+| **MySQL** | Business data: apps, endpoints, keys |
+| **MongoDB** | Auditing: logs of each attempt (`DeliveryAttempt`) and DLQ events (`DeadLetter`) |
+| **Redis** | **Token bucket** counters for rate limiting (1 bucket per app) |
 
 ---
 
-## 📈 Observabilidade
+## 📈 Observability
 
-Métricas extras expostas por **Micrometer** nos endpoints `/actuator/prometheus` do `endpoint-service`, `webhook-dispatcher` e `gateway`, e coletadas pelo Prometheus. As métricas de processo de entrega:
+Extra metrics exposed by **Micrometer** at the `/actuator/prometheus` endpoints of `endpoint-service`, `webhook-dispatcher` and `gateway`, collected by Prometheus. The delivery process metrics:
 
-| Métrica | Tipo | O que mede |
+| Metric | Type | What it measures |
 |---------|------|-----------|
-| `herald_delivery_total{status,appId}` | contador | Entregas HTTP, por status e app |
-| `herald_delivery_duration_seconds` | histograma | Latência das entregas (P50/P95/P99) |
-| `herald_retry_scheduled_total` | contador | Retentativas agendadas |
-| `herald_dlq_total` | contador | Eventos enviados à Dead Letter Queue |
+| `herald_delivery_total{status,appId}` | counter | HTTP deliveries, by status and app |
+| `herald_delivery_duration_seconds` | histogram | Delivery latency (P50/P95/P99) |
+| `herald_retry_scheduled_total` | counter | Scheduled retries |
+| `herald_dlq_total` | counter | Events sent to the Dead Letter Queue |
 
-### Acessando
+### Accessing
 
-- **Grafana** → http://localhost:3000 — dashboard **"Herald - Observabilidade"** já provisionada a partir de `./grafana/`. Login: `admin` / `admin`.
+- **Grafana** → http://localhost:3000 — the **"Herald - Observability"** dashboard is already provisioned from `./grafana/`. Login: `admin` / `admin`.
 - **Prometheus** → http://localhost:9090
 
-A dashboard inclui: volume de entregas por app, latência P50/P95/P99, taxa de sucesso, retentativas e eventos na DLQ. O dashboard e o datasource são provisionados por arquivos (`grafana/datasources.yml`, `grafana/dashboards-provider.yml`, `grafana/herald-dashboard.json`), então sobrevivem a `docker compose down`.
+The dashboard includes: delivery volume per app, P50/P95/P99 latency, success rate, retries and DLQ events. The dashboard and datasource are provisioned by files (`grafana/datasources.yml`, `grafana/dashboards-provider.yml`, `grafana/herald-dashboard.json`), so they survive `docker compose down`.
 
 ---
 
-## 🛠️ Confiabilidade implementada
+## 🛠️ Implemented reliability
 
-- **Desacoplamento assíncrono** — resposta 202 imediata, fila intermediária
-- **Entrega de at-least-once** com **retry exponencial** (`2ⁿ · 10s`, configurável)
-- **Idempotência** — dedup por `(eventId, endpointId)` + header `Idempotency-Key`
-- **Autenticidade** — assinatura `HMAC-SHA256` via `X-Webhook-Signature`
-- **Dead Letter Queue** — eventos irremediavelmente falhos ficam registrados com o motivo
-- **Timeout** — cada entrega tem limite de 5s
-- **Rate limiting por app** — token bucket no Redis via gateway (header `X-App-Key`), resposta **429** com `Retry-After`
+- **Asynchronous decoupling** — immediate 202 response, intermediate queue
+- **At-least-once delivery** with **exponential retry** (`2ⁿ · 10s`, configurable)
+- **Idempotency** — dedup by `(eventId, endpointId)` + `Idempotency-Key` header
+- **Authenticity** — `HMAC-SHA256` signature via `X-Webhook-Signature`
+- **Dead Letter Queue** — irrecoverably failed events are logged with the reason
+- **Timeout** — each delivery is limited to 5s
+- **Per-app rate limiting** — token bucket in Redis via gateway (`X-App-Key` header), **429** response with `Retry-After`
 
 ---
 
-## 🧪 Testes
+## 🧪 Tests
 
-`./mvnw clean verify` roda a suíte inteira com **Testcontainers**:
+`./mvnw clean verify` runs the whole suite with **Testcontainers**:
 
-| Módulo | Cobertura |
+| Module | Coverage |
 |--------|-----------|
-| endpoint-service | CRUD + ingestão/validação + evento chega no tópico |
-| webhook-dispatcher | entrega 200/500/indisponível, roteamento p/ retry/DLQ, dedup, métricas |
-| retry-consumer | reenvio após delay, persistência de DeadLetter |
-| gateway | roteamento `/api/v1/**`, **429** + `Retry-After`, cotas por app (Redis) |
+| endpoint-service | CRUD + ingestion/validation + event reaches the topic |
+| webhook-dispatcher | delivery 200/500/unavailable, routing to retry/DLQ, dedup, metrics |
+| retry-consumer | resend after delay, DeadLetter persistence |
+| gateway | routing `/api/v1/**`, **429** + `Retry-After`, per-app quotas (Redis) |
 
-> Requer **Docker** rodando (Testcontainers).
+> Requires **Docker** running (Testcontainers).
 
 ---
 
-## 🐳 Docker e CI/CD
+## 🐳 Docker and CI/CD
 
-### Imagens
+### Images
 
-O `Dockerfile` multi-stage compila todo o reactor no Maven e empacota o jar de um serviço específico (via `--build-arg SERVICE`):
+The multi-stage `Dockerfile` compiles the whole reactor with Maven and packages the jar of a specific service (via `--build-arg SERVICE`):
 
 ```bash
 docker build --build-arg SERVICE=gateway -t herald/gateway .
 ```
 
-Os serviços expõem as mesmas portas locais (8080–8083) e leem as configurações de infraestrutura por variáveis de ambiente (ex.: `SPRING_DATA_REDIS_HOST`).
+Services expose the same local ports (8080–8083) and read the infrastructure configuration from environment variables (e.g. `SPRING_DATA_REDIS_HOST`).
 
 ### Pipeline (GitHub Actions)
 
-`.github/workflows/ci.yml` roda em **push/PR** e em **push na `main`**:
+`.github/workflows/ci.yml` runs on **push/PR** and on **push to `main`**:
 
-1. `build-test` — `./mvnw clean verify` (suíte Testcontainers);
-2. `docker-build` — build e push das imagens dos 4 serviços para **ghcr.io** (`ghcr.io/<repo>/<service>:latest` e tag `:<sha>`).
+1. `build-test` — `./mvnw clean verify` (Testcontainers suite);
+2. `docker-build` — builds and pushes the images of the 4 services to **ghcr.io** (`ghcr.io/<repo>/<service>:latest` and `:<sha>` tag).
 
 ---
 
-## 📌 Notas técnicas
+## 📌 Technical notes
 
-- A entrega é **at-least-once**: em caso de falha do worker o evento pode ser entregue mais de uma vez — a idempotência no receptor protege contra efeitos duplicados.
-- O delay do retry usa `Thread.sleep` no consumer (didático e fino p/ este escopo); em ambiente de produção usar-se-ia um mecanismo nativo de fila atrasada.
-- As chaves de apps (secret para assinatura) são armazenadas e resolvidas **somente** no `endpoint-service` — nunca trafegam no corpo das mensagens Kafka.
+- Delivery is **at-least-once**: if the worker fails, the event may be delivered more than once — idempotency on the receiver protects against duplicate effects.
+- The retry delay uses `Thread.sleep` in the consumer (didactic and fine for this scope); in production one would use a native delayed queue mechanism.
+- App keys (signature secret) are stored and resolved **only** in the `endpoint-service` — they never travel in the body of Kafka messages.
 
 ---
 
 **Stack:** Java 21 · Spring Boot 3.5 · Apache Kafka · MySQL · MongoDB · Redis · Prometheus/Grafana · Docker · GitHub Actions · Testcontainers
 
-Feito por [Aquinozz](https://github.com/Aquinozz) — v0.2.0
+Made by [Aquinozz](https://github.com/Aquinozz) — v0.2.0
