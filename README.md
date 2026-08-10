@@ -27,19 +27,33 @@ The client receives **202 Accepted** right away — delivery is **asynchronous**
 
 ## 🚀 How to use
 
-### 1. Start the infrastructure
+### 1. Start everything (infrastructure + apps)
 
 ```bash
-docker compose up -d
+docker compose up -d --build
 ```
 
-Starts: **MySQL 8** (3306), **MongoDB 7** (27017), **Redis 7** (6379), **Kafka + Zookeeper** (9093), **Prometheus** (9090) and **Grafana** (3000, login `admin`/`admin`).
+Builds the 4 application images (multi-stage `Dockerfile`, one per module) and starts:
 
-> Kafka uses port **9093** to avoid conflicts with other local brokers on 9092. Prometheus and Grafana run with `network_mode: host` (they use the host network) to scrape `localhost:8081/8082` without relying on the docker firewall.
+**Apps:** `gateway` (8080), `endpoint-service` (8081), `webhook-dispatcher` (8082), `retry-consumer` (8083)
 
-### 2. Start the services
+**Infra:** **MySQL 8** (3306), **MongoDB 7** (27017), **Redis 7** (6379), **Kafka + Zookeeper** (9093), **Prometheus** (9090) and **Grafana** (3000, login `admin`/`admin`).
+
+Single build of the images:
 
 ```bash
+docker compose build                 # build only the app images
+docker compose up -d                 # start an already-built stack
+```
+
+> Kafka uses port **9093** to avoid conflicts with other local brokers on 9092; inside the compose network the apps talk to the broker as `kafka:9092`. Prometheus/grafana run on the compose network and scrape the apps by their service names (`gateway:8080`, `endpoint-service:8081`, `webhook-dispatcher:8082`).
+
+### 2. Alternative dev mode (apps on the host)
+
+Same infra, apps as JVMs pointing at the published ports (handy for hot reload / debugging). Start **only the infra services** (leave the apps to the host):
+
+```bash
+docker compose up -d mysql mongodb kafka zookeeper redis prometheus grafana
 ./mvnw -pl gateway spring-boot:run            # :8080 (routing + rate limit)
 ./mvnw -pl endpoint-service spring-boot:run    # :8081
 ./mvnw -pl webhook-dispatcher spring-boot:run  # :8082

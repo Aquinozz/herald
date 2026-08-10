@@ -6,6 +6,6 @@ scrape_configs:
     metrics_path: '/actuator/prometheus'
     static_configs:
       - targets:
-          - 'localhost:8080'
-          - 'localhost:8081'
-          - 'localhost:8082'
+          - 'gateway:8080'
+          - 'endpoint-service:8081'
+          - 'webhook-dispatcher:8082'
