@@ -28,6 +28,7 @@ class SwaggerDocumentationTests {
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.openapi").value("3.1.0"))
 				.andExpect(jsonPath("$.info.title").value("Herald API"))
+				.andExpect(jsonPath("$.servers[0].url").value("http://localhost:8080"))
 				.andExpect(jsonPath("$.paths").isNotEmpty());
 	}
 
