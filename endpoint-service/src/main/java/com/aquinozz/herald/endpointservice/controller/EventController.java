@@ -4,6 +4,8 @@ import com.aquinozz.herald.endpointservice.dtos.EventRequest;
 import com.aquinozz.herald.endpointservice.dtos.EventResponse;
 import com.aquinozz.herald.endpointservice.service.AppService;
 import com.aquinozz.herald.endpointservice.service.EventPublisherService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -17,11 +19,13 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/v1")
 @RequiredArgsConstructor
+@Tag(name = "Eventos", description = "Ingestao de eventos - retorna 202 e entrega de forma confiavel")
 public class EventController {
 
     private final EventPublisherService eventPublisherService;
     private final AppService appService;
 
+    @Operation(summary = "Publicar evento", description = "Recebe o evento, responde 202 imediatamente e agenda a entrega assincrona (retry, HMAC e DLQ)")
     @PostMapping("/apps/{appId}/events")
     @ResponseStatus(HttpStatus.ACCEPTED)
     public EventResponse publicar(@PathVariable Long appId, @Valid @RequestBody EventRequest request) {

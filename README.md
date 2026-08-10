@@ -74,6 +74,15 @@ for i in $(seq 1 50); do
 done; echo
 ```
 
+### 4. API docs (Swagger)
+
+The API exposes **OpenAPI/Swagger UI** via `springdoc`:
+
+- **Direct** → http://localhost:8081/swagger-ui.html
+- **Through the gateway** → http://localhost:8080/swagger-ui.html
+
+The OpenAPI JSON is served at `/v3/api-docs` (e.g. `localhost:8080/v3/api-docs`).
+
 ---
 
 ## 🧱 Architecture

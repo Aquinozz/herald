@@ -13,7 +13,7 @@ spring:
             - id: endpoint-service
               uri: ${HERALD_ENDPOINT_SERVICE_URI:http://localhost:8081}
               predicates:
-                - Path=/api/v1/**
+                - Path=/api/v1/**,/v3/api-docs/**,/swagger-ui/**,/webjars/**
               filters:
                 - name: RequestRateLimiter
                   args:
